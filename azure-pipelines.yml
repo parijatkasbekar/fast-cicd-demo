@@ -1,0 +1,79 @@
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+
+stages:
+- stage: Test
+  jobs:
+  - job: RunTests
+    pool:
+      vmImage: 'ubuntu-latest'
+
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.x'
+        addToPath: true
+
+    - script: |
+        pip install -r requirements.txt
+        pytest
+      displayName: 'Run Tests'
+
+- stage: Build
+  jobs:
+  - job: Deploy_the_webapp
+    displayName: 'Deploy_the_webapp'
+    steps:
+    - checkout: self
+
+    - task: Docker@2
+      displayName: 'Build and Push'
+      inputs:
+        command: 'buildAndPush'
+        containerRegistry: 'dockerhub-svc-con' 
+        repository: 'parijatkasbekar/fast-greeter'
+        dockerfile: '**/Dockerfile'
+        # tags: '$(Build.BuildId)'
+        tags: 'latest'
+
+
+- stage: Deploy
+  jobs:
+  - job: Deploy_to_K8s
+    displayName: 'Deploy_to_K8s'
+    pool:
+      vmImage: 'ubuntu-latest'
+
+    steps:
+    - checkout: self
+
+    - task: Kubernetes@1
+      displayName: 'Use Kubeconfig'
+      inputs:
+        connectionType: 'Kubernetes Service Connection'
+        kubernetesServiceEndpoint: 'k8s-svc-con' 
+        command: 'apply'
+        arguments: '-f manifests/'
+
+
+- stage: Monitor
+  jobs:
+  - job: Monitor_K8s
+    displayName: 'Monitor_K8s'
+    pool:
+      vmImage: 'ubuntu-latest'
+
+    steps:
+    - checkout: self
+
+    - task: Kubernetes@1
+      displayName: 'Use Kubeconfig'
+      inputs:
+        connectionType: 'Kubernetes Service Connection'
+        kubernetesServiceEndpoint: 'k8s-svc-con' 
+        command: 'apply'
+        arguments: '-f monitoring/'
